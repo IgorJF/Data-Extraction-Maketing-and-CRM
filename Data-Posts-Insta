@@ -1,0 +1,88 @@
+var sheetName = "Postagens";
+// Id do Usuário do Instagram
+var user_id = "6005917741";
+
+var instagram_base_url = "https://www.instagram.com/graphql/query/";
+var medias_query_hash = "f2405b236d85e8296cf30347c9f08c2a";
+
+var startDate = new Date('2024-09-01');
+var endDate = new Date('2024-09-30');
+
+function insertPostDetails() {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = ss.getSheetByName(sheetName);
+    sheet.clear();
+    var medias = getAllMedias();
+
+    if (sheet.getLastRow() === 0) {
+        sheet.appendRow(["Data da Postagem", "Número da Postagem", "Curtidas", "Comentários", "Tipo"]);
+    }
+
+    var postIndex = 1;
+    for (var i = 0; i < medias.length; i++) {
+        var post = medias[i];
+        var postDate = new Date(post.taken_at_timestamp * 1000); // Converte o timestamp para data
+
+        if (postDate >= startDate && postDate <= endDate) {
+            var likes = post.edge_media_preview_like ? post.edge_media_preview_like.count : 0;
+            var comments = post.edge_media_to_comment ? post.edge_media_to_comment.count : 0;
+            
+            // Determina se é foto ou vídeo
+            var mediaType = post.__typename === "GraphImage" ? "Foto" : 
+                            post.__typename === "GraphVideo" ? "Vídeo" : "Outro";
+
+            sheet.appendRow([Utilities.formatDate(postDate, Session.getScriptTimeZone(), "dd-MM-yyyy"), postIndex++, likes, comments, mediaType]);
+        }
+    }
+}
+
+function getAllMedias() {
+    var allMedias = [];
+    var hasNextPage = true;
+    var endCursor = '';
+
+    while (hasNextPage) {
+        var response = fetchMedias(endCursor);
+        if (response && response.data && response.data.user) {
+            var medias = response.data.user.edge_owner_to_timeline_media.edges;
+            allMedias = allMedias.concat(medias);
+
+            hasNextPage = response.data.user.edge_owner_to_timeline_media.page_info.has_next_page;
+            endCursor = response.data.user.edge_owner_to_timeline_media.page_info.end_cursor;
+        } else {
+            Logger.log("Erro na resposta da API: " + JSON.stringify(response));
+            break;
+        }
+    }
+
+    return allMedias.map(edge => edge.node); // Extrai apenas os nós
+}
+
+function fetchMedias(afterCursor) {
+    var url = instagram_base_url + "?query_hash=" + medias_query_hash + "&variables=" + encodeURIComponent(JSON.stringify({
+        id: user_id,
+        first: 12,
+        after: afterCursor
+    }));
+    return fetch(url);
+}
+
+function fetch(url) {
+    var ignoreError = {
+        "muteHttpExceptions": true,
+        "validateHttpsCertificates": false,
+        "headers": header
+    };
+    try {
+        var source = UrlFetchApp.fetch(url, ignoreError).getContentText();
+        return JSON.parse(source);
+    } catch (e) {
+        Logger.log("Erro ao fazer fetch: " + e.toString());
+        return {}; // Retorna um objeto vazio em caso de erro
+    }
+}
+
+var header = {
+  'cookie': 'ig_did=B75DB899-A526-4CE7-9219-ED66E9B36D97; datr=8TaNZkPRngcERNh_GcmrofBx; mid=Zo028gALAAGWY-zGFA6N_Eqck0u8; ig_nrcb=1; ps_n=1; ps_l=1; fbm_124024574287414=base_domain=.instagram.com; dpr=1.25; shbid="3963\0542206374140\0541758023515:01f723ddf54f3b82fb24c529fb1f10cb4be95586425bec554f68341c6226f382a6a3ea45"; shbts="1726487515\0542206374140\0541758023515:01f7b4ea4d0a40212f25fb20847f1ed5367e320ed77252162160677cc58157ce7f5f9192"; ds_user_id=6005917741; sessionid=6005917741%3ANUDNRGtdA4vA8n%3A24%3AAYdBaGDHqFce-tt2_wEVNsWDdUVkzTM-xAYaISfVog; csrftoken=voF0zj0Ct2aY5HO006y7Ebun3IG1WR4q; wd=744x722; fbsr_124024574287414=zqqK9Ib69-Xa8xSZnoPkhStrlIwGb_K9gG-EEGkuIBI.eyJ1c2VyX2lkIjoiMTAwMDAzNzAzMzQwNDcxIiwiY29kZSI6IkFRQXhERHluc21oVlpPT3Utb2xWUnkxYkI2OEkwT1JSWlRUT0dUa2IyWjBTZWxyUVA4emFPMjNISWdjZk5XTkZxWXlxaktWdVhyR1gzVmp3dGs3MVBQZktyV0Z4cUZlVWlJeWhjb2dlTy1uckI3V24teDllZE5WLTl6eTMxcWZFYWxpSzlEQlh2WEZFVUFrMGtOR19idHhRd010VnE5U2ZLZjJTLTh6UHhTQjNxQnFGdTlkSXltZmtBaF9qdmdiMXRSeUk5WEdOWHYtRnowbEZqRVZmYjJneVpKekJwVXNrUWJTYVdIM1RtWXZ3ODRtTksxbGthZUNRNUEwZUcxN3ZzU0VjTFQ1azVSZTl4YndsbkIxZThtekcwUHFvQ3B0Mzl0Q01jWmNQVEN3TDYxRmk1ZmlkZHF4Y1ZfXzAxREdwMjRNWXJHclFaVllTX2FFV29oR09DcElDIiwib2F1dGhfdG9rZW4iOiJFQUFCd3pMaXhuallCT3hRSVFtZkJCSUNHTWJaQUcyZ1NEQlNCa09LNlFTcEdzWkJSNGNxaEhyZHNtQTJRZmowd29UWkJsNmRDNTFMTzl4OGN6ejBpc3NRZmYxU3NUcTlVU05ka1A1ajdjdlpCang4YkFyZDhPdWNqUEVaQkRuaEo4bFdIT3FzZmZzbW9QSVFRdGZWU0kydXhySUhHMjhzTlREcFFjQ1doVjF2Q1Jja2NzbUxqZ1pBRWEzNzMxRXI2TmNPSTBaRCIsImFsZ29yaXRobSI6IkhNQUMtU0hBMjU2IiwiaXNzdWVkX2F0IjoxNzI2NTc4MTIzfQ; fbsr_124024574287414=zqqK9Ib69-Xa8xSZnoPkhStrlIwGb_K9gG-EEGkuIBI.eyJ1c2VyX2lkIjoiMTAwMDAzNzAzMzQwNDcxIiwiY29kZSI6IkFRQXhERHluc21oVlpPT3Utb2xWUnkxYkI2OEkwT1JSWlRUT0dUa2IyWjBTZWxyUVA4emFPMjNISWdjZk5XTkZxWXlxaktWdVhyR1gzVmp3dGs3MVBQZktyV0Z4cUZlVWlJeWhjb2dlTy1uckI3V24teDllZE5WLTl6eTMxcWZFYWxpSzlEQlh2WEZFVUFrMGtOR19idHhRd010VnE5U2ZLZjJTLTh6UHhTQjNxQnFGdTlkSXltZmtBaF9qdmdiMXRSeUk5WEdOWHYtRnowbEZqRVZmYjJneVpKekJwVXNrUWJTYVdIM1RtWXZ3ODRtTksxbGthZUNRNUEwZUcxN3ZzU0VjTFQ1azVSZTl4YndsbkIxZThtekcwUHFvQ3B0Mzl0Q01jWmNQVEN3TDYxRmk1ZmlkZHF4Y1ZfXzAxREdwMjRNWXJHclFaVllTX2FFV29oR09DcElDIiwib2F1dGhfdG9rZW4iOiJFQUFCd3pMaXhuallCT3hRSVFtZkJCSUNHTWJaQUcyZ1NEQlNCa09LNlFTcEdzWkJSNGNxaEhyZHNtQTJRZmowd29UWkJsNmRDNTFMTzl4OGN6ejBpc3NRZmYxU3NUcTlVU05ka1A1ajdjdlpCang4YkFyZDhPdWNqUEVaQkRuaEo4bFdIT3FzZmZzbW9QSVFRdGZWU0kydXhySUhHMjhzTlREcFFjQ1doVjF2Q1Jja2NzbUxqZ1pBRWEzNzMxRXI2TmNPSTBaRCIsImFsZ29yaXRobSI6IkhNQUMtU0hBMjU2IiwiaXNzdWVkX2F0IjoxNzI2NTc4MTIzfQ; rur="NCG\0546005917741\0541758114298:01f75a06f79ca2b70333518aa48c10bc50b5bb7526734fba16073f7fe6000c7ac382dca6'
+};
+
