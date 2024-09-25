@@ -1,0 +1,90 @@
+var sheetName = "Instagram";
+// Id do Usuário do Instagram
+var user_id = "6005917741";
+
+var instagram_base_url = "https://www.instagram.com/graphql/query/";
+var followers = "?query_hash=37479f2b8209594dde7facb0d904896a&variables=%7B%22id%22%3A%22" + user_id + "%22%2C%22first%22%3A24%7D";
+var medias = "?query_hash=f2405b236d85e8296cf30347c9f08c2a&variables=%7B%22id%22%3A%22" + user_id + "%22%2C%22first%22%3A12%7D";
+
+function insertFollowerCount() {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = ss.getSheets()[3]; 
+    var previousData = prevData();
+    var followers = getFollowers();
+    var medias = getMedias();
+    var engagement = getEngagement(medias, followers);
+
+    sheet.appendRow([Utilities.formatDate(new Date(), "GMT", "dd-MM-yyyy"), followers, followers - previousData.followers, medias.count, engagement.totalLikes, engagement.totalComments, engagement.EngagementRatio, engagement.EngagementRatio - previousData.engagement]);
+}
+
+
+function getFollowers() {
+    return parseInt(fetch(instagram_base_url + followers)['data']['user']['edge_followed_by']['count']);
+}
+
+function getMedias() {
+    return fetch(instagram_base_url + medias)['data']['user']['edge_owner_to_timeline_media'];
+}
+
+function getEngagement(medias, followers) {
+    var totalComments = 0,
+        totalLikes = 0;
+
+    var sortedPosts = medias.edges.sort(function(a, b) {
+        return b.node.taken_at_timestamp - a.node.taken_at_timestamp;
+    });
+
+    for (var i = 0; i < Math.min(2, sortedPosts.length); i++) {
+        let post = sortedPosts[i].node;
+
+        let likes = post.edge_media_preview_like ? parseInt(post.edge_media_preview_like.count) : 0;
+        let comments = post.edge_media_to_comment ? parseInt(post.edge_media_to_comment.count) : 0;
+
+        totalLikes += likes;
+        totalComments += comments;
+
+        console.log(`Post ${i+1}: ${likes} likes, ${comments} comentários`); // Debug para verificar os valores de cada postagem
+    }
+
+    var engagementRatio = (((totalLikes + totalComments)) / followers) / Math.min(2, sortedPosts.length);
+
+    return {
+        mediaCount: Math.min(2, sortedPosts.length),  // Retorna a contagem de 2 postagens
+        totalComments: totalComments,
+        totalLikes: totalLikes,
+        EngagementRatio: engagementRatio
+    };
+}
+
+var header = {'cookie': 'ig_did=B75DB899-A526-4CE7-9219-ED66E9B36D97; datr=8TaNZkPRngcERNh_GcmrofBx; mid=Zo028gALAAGWY-zGFA6N_Eqck0u8; ig_nrcb=1; ps_n=1; ps_l=1; fbm_124024574287414=base_domain=.instagram.com; dpr=1.25; shbid="3963\0542206374140\0541758023515:01f723ddf54f3b82fb24c529fb1f10cb4be95586425bec554f68341c6226f382a6a3ea45"; shbts="1726487515\0542206374140\0541758023515:01f7b4ea4d0a40212f25fb20847f1ed5367e320ed77252162160677cc58157ce7f5f9192"; ds_user_id=6005917741; sessionid=6005917741%3ANUDNRGtdA4vA8n%3A24%3AAYdBaGDHqFce-tt2_wEVNsWDdUVkzTM-xAYaISfVog; csrftoken=voF0zj0Ct2aY5HO006y7Ebun3IG1WR4q; wd=744x722; fbsr_124024574287414=zqqK9Ib69-Xa8xSZnoPkhStrlIwGb_K9gG-EEGkuIBI.eyJ1c2VyX2lkIjoiMTAwMDAzNzAzMzQwNDcxIiwiY29kZSI6IkFRQXhERHluc21oVlpPT3Utb2xWUnkxYkI2OEkwT1JSWlRUT0dUa2IyWjBTZWxyUVA4emFPMjNISWdjZk5XTkZxWXlxaktWdVhyR1gzVmp3dGs3MVBQZktyV0Z4cUZlVWlJeWhjb2dlTy1uckI3V24teDllZE5WLTl6eTMxcWZFYWxpSzlEQlh2WEZFVUFrMGtOR19idHhRd010VnE5U2ZLZjJTLTh6UHhTQjNxQnFGdTlkSXltZmtBaF9qdmdiMXRSeUk5WEdOWHYtRnowbEZqRVZmYjJneVpKekJwVXNrUWJTYVdIM1RtWXZ3ODRtTksxbGthZUNRNUEwZUcxN3ZzU0VjTFQ1azVSZTl4YndsbkIxZThtekcwUHFvQ3B0Mzl0Q01jWmNQVEN3TDYxRmk1ZmlkZHF4Y1ZfXzAxREdwMjRNWXJHclFaVllTX2FFV29oR09DcElDIiwib2F1dGhfdG9rZW4iOiJFQUFCd3pMaXhuallCT3hRSVFtZkJCSUNHTWJaQUcyZ1NEQlNCa09LNlFTcEdzWkJSNGNxaEhyZHNtQTJRZmowd29UWkJsNmRDNTFMTzl4OGN6ejBpc3NRZmYxU3NUcTlVU05ka1A1ajdjdlpCang4YkFyZDhPdWNqUEVaQkRuaEo4bFdIT3FzZmZzbW9QSVFRdGZWU0kydXhySUhHMjhzTlREcFFjQ1doVjF2Q1Jja2NzbUxqZ1pBRWEzNzMxRXI2TmNPSTBaRCIsImFsZ29yaXRobSI6IkhNQUMtU0hBMjU2IiwiaXNzdWVkX2F0IjoxNzI2NTc4MTIzfQ; fbsr_124024574287414=zqqK9Ib69-Xa8xSZnoPkhStrlIwGb_K9gG-EEGkuIBI.eyJ1c2VyX2lkIjoiMTAwMDAzNzAzMzQwNDcxIiwiY29kZSI6IkFRQXhERHluc21oVlpPT3Utb2xWUnkxYkI2OEkwT1JSWlRUT0dUa2IyWjBTZWxyUVA4emFPMjNISWdjZk5XTkZxWXlxaktWdVhyR1gzVmp3dGs3MVBQZktyV0Z4cUZlVWlJeWhjb2dlTy1uckI3V24teDllZE5WLTl6eTMxcWZFYWxpSzlEQlh2WEZFVUFrMGtOR19idHhRd010VnE5U2ZLZjJTLTh6UHhTQjNxQnFGdTlkSXltZmtBaF9qdmdiMXRSeUk5WEdOWHYtRnowbEZqRVZmYjJneVpKekJwVXNrUWJTYVdIM1RtWXZ3ODRtTksxbGthZUNRNUEwZUcxN3ZzU0VjTFQ1azVSZTl4YndsbkIxZThtekcwUHFvQ3B0Mzl0Q01jWmNQVEN3TDYxRmk1ZmlkZHF4Y1ZfXzAxREdwMjRNWXJHclFaVllTX2FFV29oR09DcElDIiwib2F1dGhfdG9rZW4iOiJFQUFCd3pMaXhuallCT3hRSVFtZkJCSUNHTWJaQUcyZ1NEQlNCa09LNlFTcEdzWkJSNGNxaEhyZHNtQTJRZmowd29UWkJsNmRDNTFMTzl4OGN6ejBpc3NRZmYxU3NUcTlVU05ka1A1ajdjdlpCang4YkFyZDhPdWNqUEVaQkRuaEo4bFdIT3FzZmZzbW9QSVFRdGZWU0kydXhySUhHMjhzTlREcFFjQ1doVjF2Q1Jja2NzbUxqZ1pBRWEzNzMxRXI2TmNPSTBaRCIsImFsZ29yaXRobSI6IkhNQUMtU0hBMjU2IiwiaXNzdWVkX2F0IjoxNzI2NTc4MTIzfQ; rur="NCG\0546005917741\0541758114298:01f75a06f79ca2b70333518aa48c10bc50b5bb7526734fba16073f7fe6000c7ac382dca6'};
+
+
+function fetch(url) {
+  var ignoreError = {
+    "muteHttpExceptions": true,
+    "validateHttpsCertificates":false,
+    "headers":header
+  };
+  var source = UrlFetchApp.fetch(url, ignoreError).getContentText();
+  var data = JSON.parse(source);
+  return data;
+}
+
+
+function prevData() {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = ss.getSheetByName(this.sheetName);
+    var Avals = sheet.getRange("B1:B").getValues();
+    var Alast = Avals.filter(String).length;
+    var prevFollowers = sheet.getRange("B"+Alast).getValues();
+    var prevEngagement = sheet.getRange("G"+Alast).getValues();
+  return {
+    followers: parseInt(prevFollowers),
+    engagement: prevEngagement    
+  }
+   
+};
+
+
+
+
