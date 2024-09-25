@@ -1,0 +1,72 @@
+function fetchAndListDealsCorrect() {
+  const sheetIndex = 5; 
+  const sheets = SpreadsheetApp.getActiveSpreadsheet().getSheets();
+  
+  if (sheetIndex >= sheets.length) {
+    Logger.log(`A aba com o índice ${sheetIndex} não existe.`);
+    return;
+  }
+
+  const sheet = sheets[sheetIndex];
+  sheet.clear();
+  sheet.appendRow(['Nome do Cliente', 'Etapa', 'Fonte', 'Campanha', 'Data de Criação', 'Organização']);
+
+  const options = {
+    method: 'GET',
+    headers: {
+      accept: 'application/json'
+    }
+  };
+
+  function addDays(date, days) {
+    const result = new Date(date);
+    result.setDate(result.getDate() + days);
+    return result;
+  }
+
+  // Função para formatar a data no formato dd/mm/aaaa
+  function formatDateToDDMMYYYY(date) {
+    const day = ('0' + date.getDate()).slice(-2);
+    const month = ('0' + (date.getMonth() + 1)).slice(-2);
+    const year = date.getFullYear();
+    return `${day}/${month}/${year}`;
+  }
+
+  let startDate = new Date('2024-09-01');
+  let endDate = addDays(startDate, 4); 
+  let finalDate = new Date('2024-09-30'); 
+
+  while (startDate <= finalDate) {
+    const startDateString = startDate.toISOString().split('T')[0];
+    const endDateString = endDate.toISOString().split('T')[0];
+    const url = `https://crm.rdstation.com/api/v1/deals?token=613662cb5bda87000b62d014&limit=200&created_at_period=true&start_date=${startDateString}&end_date=${endDateString}`;
+
+    const response = UrlFetchApp.fetch(url, options);
+    const data = JSON.parse(response.getContentText());
+
+    if (data && Array.isArray(data.deals)) {
+      const deals = data.deals;
+
+      deals.forEach(deal => {
+        const dealStageName = deal.deal_stage ? deal.deal_stage.name : 'N/A';
+        const campaignName = deal.campaign ? deal.campaign.name : 'N/A';
+        const dealSourceName = deal.deal_source ? deal.deal_source.name : 'N/A';
+        const createdAt = deal.created_at ? formatDateToDDMMYYYY(new Date(deal.created_at)) : 'N/A';
+        const organizationName = deal.organization ? deal.organization.name : 'N/A';  // Adicionando organização
+
+        sheet.appendRow([deal.name, dealStageName, dealSourceName, campaignName, createdAt, organizationName]);
+      });
+    } else {
+      Logger.log( startDateString + " a " + endDateString);
+    }
+
+    startDate = addDays(endDate, 1);
+    endDate = addDays(startDate, 4);
+    
+    if (endDate > finalDate) {
+      endDate = finalDate;
+    }
+  }
+  
+  Logger.log("Processamento concluído.");
+}
